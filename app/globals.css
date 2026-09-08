@@ -89,6 +89,17 @@ html[data-mood] .theme-page [class*="bg-[#0a0d17]"],
 html[data-mood] .theme-page [class*="bg-[#090b12]"],
 html[data-mood] .theme-page [class*="bg-zinc-900"] { background-color: var(--app-surface-soft) !important; }
 
+html[data-mood="paper"] .theme-page [class*="bg-zinc-800"] {
+  background-color: var(--app-surface-soft) !important;
+  color: var(--app-text) !important;
+}
+
+html[data-mood="paper"] .theme-page button[class*="bg-zinc-800"],
+html[data-mood="paper"] .theme-page button:focus-visible {
+  background-color: var(--app-accent) !important;
+  color: white !important;
+}
+
 html[data-mood] .theme-page [class*="text-zinc-100"],
 html[data-mood] .theme-page [class*="text-zinc-200"],
 html[data-mood] .theme-page [class*="text-zinc-300"] { color: var(--app-text) !important; }
@@ -96,4 +107,16 @@ html[data-mood] .theme-page [class*="text-zinc-400"],
 html[data-mood] .theme-page [class*="text-zinc-500"] { color: var(--app-text-muted) !important; }
 html[data-mood] .theme-page [class*="border-zinc"] {
   border-color: var(--app-border) !important;
+}
+
+html[data-mood="paper"] .theme-page :is(input, select, textarea):focus {
+  background-color: var(--app-surface) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 22%, transparent) !important;
+}
+
+html[data-mood="paper"] .theme-page :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-accent) 42%, transparent) !important;
+  outline-offset: 2px;
 }

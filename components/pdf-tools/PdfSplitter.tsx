@@ -6,6 +6,7 @@ import { PDFDocument } from "pdf-lib";
 import { Archive, Download, FileCheck2, FileUp, Loader2, X } from "lucide-react";
 import ThemeToggle from "../ThemeToggle";
 import { createPdfSplitRanges, type PdfSplitRange } from "./pdfSplitUtils";
+import { saveExport } from "./saveExport";
 
 export default function PdfSplitter() {
   const [file, setFile] = useState<File | null>(null);
@@ -76,13 +77,8 @@ export default function PdfSplitter() {
         zip.file(`${baseName}_${range.label}.pdf`, splitBytes);
       }
 
-      const zipBytes = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipBytes);
-      const link = window.document.createElement("a");
-      link.href = url;
-      link.download = `${baseName}_split.zip`;
-      link.click();
-      URL.revokeObjectURL(url);
+      const zipBytes = await zip.generateAsync({ type: "uint8array" });
+      await saveExport(zipBytes, `${baseName}_split.zip`, "application/zip");
     } catch (exportError) {
       console.error("Failed to export split PDFs:", exportError);
       setError("Could not create the ZIP file. Please try again.");

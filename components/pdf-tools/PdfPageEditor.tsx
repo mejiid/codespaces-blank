@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import JSZip from "jszip";
 import { PDFDocument, rgb } from "pdf-lib";
 import {
   AlertCircle,
@@ -18,11 +19,13 @@ import {
   X,
 } from "lucide-react";
 import ThemeToggle from "../ThemeToggle";
+import { saveExport } from "./saveExport";
 
 type PageNode = { logicalPageNumber: number | null; isCover?: boolean };
 type SheetSide = { left: PageNode; right: PageNode };
 type ImposedSheet = { sheetNumber: number; front: SheetSide; back: SheetSide };
 type ViewMode = "visual" | "table" | "sequence";
+type PrintMode = "duplex" | "single-sided";
 type ImpositionSummary = { startPage: number; endPage: number; signatureSheets: number; signaturePageCount: number; blankPagesAdded: number; totalSheets: number; sheets: ImposedSheet[]; printSequenceText: string };
 
 function calculateImposition(input: string, signatureInput: string, maxAllowed?: number): ImpositionSummary | null {
@@ -81,6 +84,7 @@ export default function PdfPageEditor() {
   const [buffer, setBuffer] = useState<ArrayBuffer | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [foldLine, setFoldLine] = useState(true);
+  const [printMode, setPrintMode] = useState<PrintMode>("duplex");
   const [viewMode, setViewMode] = useState<ViewMode>("visual");
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -116,26 +120,40 @@ export default function PdfPageEditor() {
     setIsProcessing(true);
     try {
       const source = await PDFDocument.load(buffer);
-      const output = await PDFDocument.create();
       const { width, height } = source.getPage(0).getSize();
-      for (const sheet of imposition.sheets) {
-        for (const side of [sheet.front, sheet.back]) {
+      const baseName = file.name.replace(/\.pdf$/i, "");
+      const sides: Array<{ name: string; sheets: SheetSide[] }> = printMode === "duplex"
+        ? [{ name: "booklet_imposed", sheets: imposition.sheets.flatMap((sheet) => [sheet.front, sheet.back]) }]
+        : [
+            { name: "front", sheets: imposition.sheets.map((sheet) => sheet.front) },
+            { name: "back", sheets: imposition.sheets.map((sheet) => sheet.back) },
+          ];
+      const generatedFiles: Array<{ name: string; bytes: Uint8Array }> = [];
+
+      for (const side of sides) {
+        const output = await PDFDocument.create();
+        for (const spread of side.sheets) {
           const page = output.addPage([width * 2, height]);
-          for (const [node, x] of [[side.left, 0], [side.right, width]] as const) {
+          for (const [node, x] of [[spread.left, 0], [spread.right, width]] as const) {
             if (node.logicalPageNumber === null) continue;
             const [embedded] = await output.embedPages([source.getPage(node.logicalPageNumber - 1)]);
             page.drawPage(embedded, { x, y: 0, width, height });
           }
           if (foldLine) page.drawLine({ start: { x: width, y: 15 }, end: { x: width, y: height - 15 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8), dashArray: [3, 3] });
         }
+        const bytes = await output.save();
+        generatedFiles.push({ name: `${baseName}_${side.name}.pdf`, bytes });
       }
-      const bytes = await output.save();
-      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${file.name.replace(/\.pdf$/i, "")}_booklet_imposed.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+
+      if (printMode === "single-sided") {
+        const archive = new JSZip();
+        generatedFiles.forEach(({ name, bytes }) => archive.file(name, bytes));
+        const zipBytes = await archive.generateAsync({ type: "uint8array" });
+        await saveExport(zipBytes, `${baseName}_front_and_back.zip`, "application/zip");
+      } else {
+        const [{ name, bytes }] = generatedFiles;
+        await saveExport(bytes, name, "application/pdf");
+      }
     } catch (error) {
       console.error("PDF imposition failed:", error);
       alert("An error occurred during PDF generation.");
@@ -149,12 +167,12 @@ export default function PdfPageEditor() {
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <header className="flex flex-col justify-between gap-4 border-b border-zinc-800/80 pb-6 sm:flex-row sm:items-center">
           <div><div className="flex items-center gap-3"><div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2 text-indigo-400"><Layers className="h-5 w-5" /></div><h1 className="text-xl font-semibold text-zinc-100">Booklet Imposition</h1></div><p className="mt-1 text-sm text-zinc-400">Convert PDFs into print-ready 2-up saddle-stitch booklets.</p></div>
-          <div className="flex items-center gap-2">{imposition && <div className="flex items-center gap-2 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5"><Printer className="h-3.5 w-3.5" />{imposition.totalSheets} {imposition.totalSheets === 1 ? "sheet" : "sheets"}</span><span className="rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5">Duplex landscape</span></div>}<ThemeToggle /></div>
+          <div className="flex items-center gap-2">{imposition && <div className="flex items-center gap-2 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5"><Printer className="h-3.5 w-3.5" />{imposition.totalSheets} {imposition.totalSheets === 1 ? "sheet" : "sheets"}</span><span className="rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5">{printMode === "duplex" ? "Duplex" : "Single-sided"} landscape</span></div>}<ThemeToggle /></div>
         </header>
 
         <section className="space-y-4 rounded-xl border border-zinc-800/90 bg-[#0f1422] p-4 shadow-xl sm:p-5">
           <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(event) => event.target.files?.[0] && loadFile(event.target.files[0])} />
-          {!file ? <div onClick={() => fileInputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (event.dataTransfer.files[0]) loadFile(event.dataTransfer.files[0]); }} className="cursor-pointer rounded-lg border border-dashed border-zinc-700 p-8 text-center hover:border-indigo-500/60 hover:bg-zinc-900/40"><FileUp className="mx-auto mb-3 h-6 w-6 text-indigo-400" /><p className="text-sm font-medium text-zinc-200">Drop your PDF here or click to browse</p><p className="mt-1 text-xs text-zinc-500">The file stays in your browser.</p></div> : <div className="flex flex-col justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/90 p-3 sm:flex-row sm:items-center"><div className="flex min-w-0 items-center gap-3"><FileCheck2 className="h-5 w-5 shrink-0 text-emerald-400" /><div className="min-w-0"><p className="truncate text-xs font-medium text-zinc-200">{file.name}</p><p className="text-[11px] text-zinc-500">{pageCount} pages detected</p></div></div><div className="flex w-full flex-wrap items-center gap-3 sm:w-auto"><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={foldLine} onChange={(event) => setFoldLine(event.target.checked)} /><Scissors className="h-3.5 w-3.5" />Fold line</label><button type="button" onClick={exportBooklet} disabled={isProcessing} className="flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 sm:flex-none">{isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Export imposed PDF</button><button type="button" onClick={clearFile} className="rounded-md p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" title="Remove file"><X className="h-4 w-4" /></button></div></div>}
+          {!file ? <div onClick={() => fileInputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (event.dataTransfer.files[0]) loadFile(event.dataTransfer.files[0]); }} className="cursor-pointer rounded-lg border border-dashed border-zinc-700 p-8 text-center hover:border-indigo-500/60 hover:bg-zinc-900/40"><FileUp className="mx-auto mb-3 h-6 w-6 text-indigo-400" /><p className="text-sm font-medium text-zinc-200">Drop your PDF here or click to browse</p><p className="mt-1 text-xs text-zinc-500">The file stays in your browser.</p></div> : <div className="flex flex-col justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/90 p-3 sm:flex-row sm:items-center"><div className="flex min-w-0 items-center gap-3"><FileCheck2 className="h-5 w-5 shrink-0 text-emerald-400" /><div className="min-w-0"><p className="truncate text-xs font-medium text-zinc-200">{file.name}</p><p className="text-[11px] text-zinc-500">{pageCount} pages detected</p></div></div><div className="flex w-full flex-wrap items-center gap-3 sm:w-auto"><label className="flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" checked={foldLine} onChange={(event) => setFoldLine(event.target.checked)} /><Scissors className="h-3.5 w-3.5" />Fold line</label><button type="button" onClick={exportBooklet} disabled={isProcessing} className="flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 sm:flex-none">{isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}{printMode === "single-sided" ? "Export front + back ZIP" : "Export imposed PDF"}</button><button type="button" onClick={clearFile} className="rounded-md p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" title="Remove file"><X className="h-4 w-4" /></button></div></div>}
           <div className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
             <label className="text-xs text-zinc-400">Page range
               <input value={input} onChange={(event) => setInput(event.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700/70 bg-[#0a0d17] px-3.5 py-2.5 font-mono text-sm text-zinc-100 outline-none focus:border-indigo-500" placeholder="1-60 or 24" />
@@ -166,6 +184,11 @@ export default function PdfPageEditor() {
               <span className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-2 text-indigo-300">{imposition.signaturePageCount} pages per signature</span>
               {imposition.blankPagesAdded ? <span className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-300"><Sparkles className="h-3.5 w-3.5 text-amber-400" />+{imposition.blankPagesAdded} blank pad</span> : null}
             </div> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800/80 pt-3">
+            <span className="mr-1 text-xs text-zinc-500">Printer mode</span>
+            <ViewButton active={printMode === "duplex"} onClick={() => setPrintMode("duplex")}>Duplex</ViewButton>
+            <ViewButton active={printMode === "single-sided"} onClick={() => setPrintMode("single-sided")}>Single-sided (2 PDFs)</ViewButton>
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800/80 pt-3">
             <span className="mr-1 text-xs text-zinc-500">View</span>

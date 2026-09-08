@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import ThemeToggle from "../ThemeToggle";
+import { saveExport } from "./saveExport";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -151,12 +152,7 @@ export default function PdfPageRemover() {
         output.addPage(copiedPage);
       }
       const outputBytes = await output.save();
-      const url = URL.createObjectURL(new Blob([outputBytes as BlobPart], { type: "application/pdf" }));
-      const link = window.document.createElement("a");
-      link.href = url;
-      link.download = `${file.name.replace(/\.pdf$/i, "")}_pages_removed.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      await saveExport(outputBytes, `${file.name.replace(/\.pdf$/i, "")}_pages_removed.pdf`, "application/pdf");
     } catch (exportError) {
       console.error("Failed to export the cleaned PDF:", exportError);
       setError("Could not export the updated PDF. Please try again.");

@@ -1,4 +1,5 @@
 import type { ImposedSheet, ImpositionSummary, PageNode } from "./types";
+import { saveExport } from "../saveExport";
 
 export const PRESET_RANGES = ["1-8", "1-12", "1-16", "1-20", "1-24", "1-32"] as const;
 
@@ -93,27 +94,22 @@ export function calculateBookletImposition(
   };
 }
 
-/** Triggers a browser download for the given blob. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+/** Saves a blob using the browser's Save As dialog when available. */
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  await saveExport(new Uint8Array(await blob.arrayBuffer()), filename, blob.type || "application/octet-stream");
 }
 
 /** Downloads a PDF byte array. */
-export function downloadPdfBytes(bytes: Uint8Array, filename: string): void {
-  downloadBlob(new Blob([bytes as BlobPart], { type: "application/pdf" }), filename);
+export async function downloadPdfBytes(bytes: Uint8Array, filename: string): Promise<void> {
+  await saveExport(bytes, filename, "application/pdf");
 }
 
 /** Downloads the imposition matrix as a CSV file. */
-export function downloadImpositionCsv(
+export async function downloadImpositionCsv(
   startPage: number,
   endPage: number,
   sheets: ImposedSheet[]
-): void {
+): Promise<void> {
   const headers = ["Sheet #", "Front Left", "Front Right", "Back Left", "Back Right"];
   const rows = sheets.map((s) => [
     s.sheetNumber,
@@ -122,13 +118,8 @@ export function downloadImpositionCsv(
     s.back.left.logicalPageNumber ?? "[Blank]",
     s.back.right.logicalPageNumber ?? "[Blank]",
   ]);
-  const csvContent =
-    "data:text/csv;charset=utf-8," +
-    [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-  const link = document.createElement("a");
-  link.setAttribute("href", encodeURI(csvContent));
-  link.setAttribute("download", `imposition_matrix_${startPage}-${endPage}.csv`);
-  link.click();
+  const csvContent = [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+  await saveExport(new TextEncoder().encode(csvContent), `imposition_matrix_${startPage}-${endPage}.csv`, "text/csv");
 }
 
 /** Copies text to the system clipboard. */

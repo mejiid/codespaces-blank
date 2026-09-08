@@ -6,6 +6,7 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { Download, FileCheck2, FileUp, Loader2, X } from "lucide-react";
 import PageNumberingPanel, { defaultPageNumberSettings, getPageNumberPosition, getPageNumberText, type PageNumberSettings } from "./PageNumberingPanel";
 import ThemeToggle from "../ThemeToggle";
+import { saveExport } from "./saveExport";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -83,12 +84,7 @@ export default function PdfPageNumberer() {
         output.addPage(page);
       }
       const outputBytes = await output.save();
-      const url = URL.createObjectURL(new Blob([outputBytes as BlobPart], { type: "application/pdf" }));
-      const link = window.document.createElement("a");
-      link.href = url;
-      link.download = `${file.name.replace(/\.pdf$/i, "")}_numbered.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      await saveExport(outputBytes, `${file.name.replace(/\.pdf$/i, "")}_numbered.pdf`, "application/pdf");
     } catch (exportError) {
       console.error("Failed to export numbered PDF:", exportError);
       setError("Could not export the numbered PDF. Please try again.");
