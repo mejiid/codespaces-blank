@@ -137,7 +137,15 @@ export default function PdfPageEditor() {
           for (const [node, x] of [[spread.left, 0], [spread.right, width]] as const) {
             if (node.logicalPageNumber === null) continue;
             const [embedded] = await output.embedPages([source.getPage(node.logicalPageNumber - 1)]);
-            page.drawPage(embedded, { x, y: 0, width, height });
+            const scale = Math.min(width / embedded.width, height / embedded.height);
+            const drawnWidth = embedded.width * scale;
+            const drawnHeight = embedded.height * scale;
+            page.drawPage(embedded, {
+              x: x + (width - drawnWidth) / 2,
+              y: (height - drawnHeight) / 2,
+              width: drawnWidth,
+              height: drawnHeight,
+            });
           }
           if (foldLine) page.drawLine({ start: { x: width, y: 15 }, end: { x: width, y: height - 15 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8), dashArray: [3, 3] });
         }

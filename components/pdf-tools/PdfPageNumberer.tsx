@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { Download, FileCheck2, FileUp, Loader2, X } from "lucide-react";
-import PageNumberingPanel, { defaultPageNumberSettings, getPageNumberPosition, getPageNumberText, type PageNumberSettings } from "./PageNumberingPanel";
+import PageNumberingPanel, { defaultPageNumberSettings, getPageNumberPosition, getPageNumberPositionForPage, getPageNumberText, type PageNumberSettings } from "./PageNumberingPanel";
 import ThemeToggle from "../ThemeToggle";
 import { saveExport } from "./saveExport";
 
@@ -73,13 +73,21 @@ export default function PdfPageNumberer() {
       const font = await output.embedFont(StandardFonts.Helvetica);
       for (let index = 0; index < source.getPageCount(); index += 1) {
         const [page] = await output.copyPages(source, [index]);
-        if (settings.enabled) {
-          const text = getPageNumberText(settings, index);
+        const numberingIndex = index - (settings.startPage - 1);
+        const isRunningHeader = settings.position === "running-header";
+        if (settings.enabled && (isRunningHeader || numberingIndex >= 0)) {
           const { width, height } = page.getSize();
-          const position = getPageNumberPosition(settings.position, width, height, settings.fontSize);
+          const text = isRunningHeader ? settings.headerTextMode === "double" && index % 2 === 1 ? settings.evenHeaderText : settings.headerText : getPageNumberText(settings, numberingIndex);
+          const position = getPageNumberPosition(isRunningHeader ? "top-center" : getPageNumberPositionForPage(settings, index), width, height, settings.fontSize);
           const textWidth = font.widthOfTextAtSize(text, settings.fontSize);
           const x = position.align === "left" ? position.x : position.align === "right" ? position.x - textWidth : position.x - textWidth / 2;
-          page.drawText(text, { x, y: position.y, size: settings.fontSize, font, color: rgb(0, 0, 0) });
+          if (text) page.drawText(text, { x, y: position.y, size: settings.fontSize, font, color: rgb(0, 0, 0) });
+          if (isRunningHeader) {
+            const ruleY = height - Math.max(12, settings.fontSize);
+            const ruleColor = rgb(0, 0, 0);
+            if (settings.headerRulePosition === "above" || settings.headerRulePosition === "both") page.drawLine({ start: { x: 24, y: ruleY + settings.fontSize + 8 }, end: { x: width - 24, y: ruleY + settings.fontSize + 8 }, thickness: 0.5, color: ruleColor });
+            if (settings.headerRulePosition === "below" || settings.headerRulePosition === "both") page.drawLine({ start: { x: 24, y: ruleY - 6 }, end: { x: width - 24, y: ruleY - 6 }, thickness: 0.5, color: ruleColor });
+          }
         }
         output.addPage(page);
       }
@@ -102,7 +110,7 @@ export default function PdfPageNumberer() {
           {!file ? <div onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (event.dataTransfer.files[0]) loadFile(event.dataTransfer.files[0]); }} className="cursor-pointer rounded-lg border border-dashed border-zinc-700 p-8 text-center hover:border-indigo-500/60 hover:bg-zinc-900/40 sm:p-10"><FileUp className="mx-auto mb-3 h-6 w-6 text-indigo-400" /><p className="text-sm font-medium text-zinc-200">Upload a PDF to add page numbers</p><p className="mt-1 text-xs text-zinc-500">The file stays in your browser.</p></div> : <div className="flex flex-col justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/90 p-3 sm:flex-row sm:items-center"><div className="flex min-w-0 items-center gap-3"><FileCheck2 className="h-5 w-5 shrink-0 text-emerald-400" /><div className="min-w-0"><p className="truncate text-xs font-medium text-zinc-200">{file.name}</p><p className="text-[11px] text-zinc-500">{pages.length} pages loaded</p></div></div><div className="flex w-full items-center gap-2 sm:w-auto"><button type="button" onClick={exportPdf} disabled={exporting} className="flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 sm:flex-none">{exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Export numbered PDF</button><button type="button" onClick={clearFile} className="rounded-md p-2 text-zinc-400 hover:bg-zinc-800" title="Remove file"><X className="h-4 w-4" /></button></div></div>}
           {error && <p className="rounded-lg border border-red-700/60 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>}
           {file && <PageNumberingPanel settings={settings} onChange={setSettings} pageCount={pages.length} />}
-          {loading ? <div className="flex justify-center gap-2 p-8 text-sm text-zinc-300"><Loader2 className="h-4 w-4 animate-spin" />Preparing previews...</div> : pages.length > 0 && <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 md:grid-cols-7">{pages.map((page, index) => <div key={index} className="relative overflow-hidden rounded-lg border border-zinc-800 bg-white"><img src={page.dataUrl} alt={`Page ${index + 1}`} className="h-32 w-full object-contain" />{settings.enabled && <span className="absolute bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-black" style={{ fontSize: Math.max(8, settings.fontSize / 2) }}>{getPageNumberText(settings, index)}</span>}<div className="bg-zinc-900 px-2 py-1 text-center text-[10px] font-mono text-zinc-400">Page {index + 1}</div></div>)}</div>}
+          {loading ? <div className="flex justify-center gap-2 p-8 text-sm text-zinc-300"><Loader2 className="h-4 w-4 animate-spin" />Preparing previews...</div> : pages.length > 0 && <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 md:grid-cols-7">{pages.map((page, index) => { const numberingIndex = index - (settings.startPage - 1); const isRunningHeader = settings.position === "running-header"; const previewPosition = isRunningHeader ? "top-center" : getPageNumberPositionForPage(settings, numberingIndex); const headerText = settings.headerTextMode === "double" && index % 2 === 1 ? settings.evenHeaderText : settings.headerText; const horizontalClass = previewPosition.endsWith("left") ? "left-1" : previewPosition.endsWith("right") ? "right-1" : "left-1/2 -translate-x-1/2"; const verticalClass = previewPosition.startsWith("top") ? "top-1" : "bottom-1"; const shouldShow = settings.enabled && (isRunningHeader || numberingIndex >= 0); return <div key={index} className="relative overflow-hidden rounded-lg border border-zinc-800 bg-white"><img src={page.dataUrl} alt={`Page ${index + 1}`} className="h-32 w-full object-contain" />{shouldShow && <>{isRunningHeader && <>{(settings.headerRulePosition === "above" || settings.headerRulePosition === "both") && <span className="absolute left-1 right-1 top-0 border-t border-black" />}{(settings.headerRulePosition === "below" || settings.headerRulePosition === "both") && <span className="absolute left-1 right-1 top-4 border-t border-black" />}</>}<span className={`absolute ${verticalClass} ${horizontalClass} whitespace-nowrap text-[9px] text-black`} style={{ fontSize: Math.max(8, settings.fontSize / 2) }}>{isRunningHeader ? headerText : getPageNumberText(settings, numberingIndex)}</span></>}{<div className="bg-zinc-900 px-2 py-1 text-center text-[10px] font-mono text-zinc-400">Page {index + 1}</div>}</div>; })}</div>}
         </section>
       </div>
     </main>
