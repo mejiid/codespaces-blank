@@ -9,7 +9,8 @@ export const PRESET_RANGES = ["1-8", "1-12", "1-16", "1-20", "1-24", "1-32"] as 
  */
 export function calculateBookletImposition(
   input: string,
-  maxAllowed?: number
+  maxAllowed?: number,
+  readingDirection: "ltr" | "rtl" = "ltr"
 ): ImpositionSummary | null {
   const trimmed = input.trim();
   let start = 1;
@@ -59,16 +60,18 @@ export function calculateBookletImposition(
     const backLeftIdx = 2 * i;
     const backRightIdx = paddedPageCount - 2 * i + 1;
 
+    const latinFront = {
+      left: getPageNode(frontLeftIdx),
+      right: getPageNode(frontRightIdx),
+    };
+    const latinBack = {
+      left: getPageNode(backLeftIdx),
+      right: getPageNode(backRightIdx),
+    };
     sheets.push({
       sheetNumber: i,
-      front: {
-        left: getPageNode(frontLeftIdx),
-        right: getPageNode(frontRightIdx),
-      },
-      back: {
-        left: getPageNode(backLeftIdx),
-        right: getPageNode(backRightIdx),
-      },
+      front: readingDirection === "rtl" ? { left: latinFront.right, right: latinFront.left } : latinFront,
+      back: readingDirection === "rtl" ? { left: latinBack.right, right: latinBack.left } : latinBack,
     });
   }
 

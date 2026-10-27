@@ -10,6 +10,7 @@ import {
   FileCheck2,
   FileCode,
   FileUp,
+  Languages,
   Layers,
   Loader2,
   Printer,
@@ -26,9 +27,14 @@ type SheetSide = { left: PageNode; right: PageNode };
 type ImposedSheet = { sheetNumber: number; front: SheetSide; back: SheetSide };
 type ViewMode = "visual" | "table" | "sequence";
 type PrintMode = "duplex" | "single-sided";
+type ReadingDirection = "ltr" | "rtl";
 type ImpositionSummary = { startPage: number; endPage: number; signatureSheets: number; signaturePageCount: number; blankPagesAdded: number; totalSheets: number; sheets: ImposedSheet[]; printSequenceText: string };
 
-function calculateImposition(input: string, signatureInput: string, maxAllowed?: number): ImpositionSummary | null {
+function swapSheetSide(side: SheetSide): SheetSide {
+  return { left: side.right, right: side.left };
+}
+
+function calculateImposition(input: string, signatureInput: string, maxAllowed?: number, readingDirection: ReadingDirection = "ltr"): ImpositionSummary | null {
   const trimmed = input.trim();
   let start = 1;
   let end: number;
@@ -65,10 +71,12 @@ function calculateImposition(input: string, signatureInput: string, maxAllowed?:
     };
 
     for (let blockSheet = 1; blockSheet <= paddedBlockPageCount / 4; blockSheet += 1) {
+      const latinFront = { left: pageAt(paddedBlockPageCount - 2 * (blockSheet - 1)), right: pageAt(2 * blockSheet - 1) };
+      const latinBack = { left: pageAt(2 * blockSheet), right: pageAt(paddedBlockPageCount - 2 * blockSheet + 1) };
       sheets.push({
         sheetNumber,
-        front: { left: pageAt(paddedBlockPageCount - 2 * (blockSheet - 1)), right: pageAt(2 * blockSheet - 1) },
-        back: { left: pageAt(2 * blockSheet), right: pageAt(paddedBlockPageCount - 2 * blockSheet + 1) },
+        front: readingDirection === "rtl" ? swapSheetSide(latinFront) : latinFront,
+        back: readingDirection === "rtl" ? swapSheetSide(latinBack) : latinBack,
       });
       sheetNumber += 1;
     }
@@ -85,10 +93,15 @@ export default function PdfPageEditor() {
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [foldLine, setFoldLine] = useState(true);
   const [printMode, setPrintMode] = useState<PrintMode>("duplex");
+  const [readingDirection, setReadingDirection] = useState<ReadingDirection>("ltr");
   const [viewMode, setViewMode] = useState<ViewMode>("visual");
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imposition = useMemo(() => calculateImposition(input, signatureSheetsInput, pageCount ?? undefined), [input, signatureSheetsInput, pageCount]);
+  const imposition = useMemo(
+    () => calculateImposition(input, signatureSheetsInput, pageCount ?? undefined, readingDirection),
+    [input, signatureSheetsInput, pageCount, readingDirection]
+  );
+  const isArabicBook = readingDirection === "rtl";
 
   const loadFile = async (nextFile: File) => {
     if (nextFile.type !== "application/pdf" && !nextFile.name.toLowerCase().endsWith(".pdf")) return;
@@ -174,7 +187,7 @@ export default function PdfPageEditor() {
     <main className="theme-page min-h-screen bg-[#07090e] p-4 text-zinc-200 antialiased sm:p-8">
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <header className="flex flex-col justify-between gap-4 border-b border-zinc-800/80 pb-6 sm:flex-row sm:items-center">
-          <div><div className="flex items-center gap-3"><div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2 text-indigo-400"><Layers className="h-5 w-5" /></div><h1 className="text-xl font-semibold text-zinc-100">Booklet Imposition</h1></div><p className="mt-1 text-sm text-zinc-400">Convert PDFs into print-ready 2-up saddle-stitch booklets.</p></div>
+          <div><div className="flex items-center gap-3"><div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2 text-indigo-400"><Layers className="h-5 w-5" /></div><h1 className="text-xl font-semibold text-zinc-100">Booklet Imposition</h1></div><p className="mt-1 text-sm text-zinc-400">{isArabicBook ? "Arabic booklet mode: page 1 sits on the left of the outer sheet, like a right-bound book." : "Convert PDFs into print-ready 2-up saddle-stitch booklets."}</p></div>
           <div className="flex items-center gap-2">{imposition && <div className="flex items-center gap-2 text-xs font-mono text-zinc-400"><span className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5"><Printer className="h-3.5 w-3.5" />{imposition.totalSheets} {imposition.totalSheets === 1 ? "sheet" : "sheets"}</span><span className="rounded-md border border-zinc-800 bg-zinc-900/90 px-3 py-1.5">{printMode === "duplex" ? "Duplex" : "Single-sided"} landscape</span></div>}<ThemeToggle /></div>
         </header>
 
@@ -199,6 +212,12 @@ export default function PdfPageEditor() {
             <ViewButton active={printMode === "single-sided"} onClick={() => setPrintMode("single-sided")}>Single-sided (2 PDFs)</ViewButton>
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800/80 pt-3">
+            <span className="mr-1 inline-flex items-center gap-1.5 text-xs text-zinc-500"><Languages className="h-3.5 w-3.5" />Book direction</span>
+            <ViewButton active={!isArabicBook} onClick={() => setReadingDirection("ltr")}>Latin (LTR)</ViewButton>
+            <ViewButton active={isArabicBook} onClick={() => setReadingDirection("rtl")}>Arabic (RTL)</ViewButton>
+            {isArabicBook ? <span className="text-[11px] text-zinc-500">Page 1 on the left · cover opens from the left</span> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800/80 pt-3">
             <span className="mr-1 text-xs text-zinc-500">View</span>
             <ViewButton active={viewMode === "visual"} onClick={() => setViewMode("visual")}>Visual</ViewButton>
             <ViewButton active={viewMode === "table"} onClick={() => setViewMode("table")} icon={<TableIcon className="h-3.5 w-3.5" />}>Table</ViewButton>
@@ -207,8 +226,8 @@ export default function PdfPageEditor() {
         </section>
 
         {imposition ? <div className="space-y-4">
-          {viewMode === "visual" && imposition.sheets.map((sheet) => <SheetCard key={sheet.sheetNumber} sheet={sheet} totalSheets={imposition.totalSheets} />)}
-          {viewMode === "table" && <ImpositionTable sheets={imposition.sheets} />}
+          {viewMode === "visual" && imposition.sheets.map((sheet) => <SheetCard key={sheet.sheetNumber} sheet={sheet} totalSheets={imposition.totalSheets} arabic={isArabicBook} />)}
+          {viewMode === "table" && <ImpositionTable sheets={imposition.sheets} arabic={isArabicBook} />}
           {viewMode === "sequence" && <div className="rounded-xl border border-zinc-800 bg-[#0f1422] p-5"><div className="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-300"><FileCode className="h-4 w-4 text-indigo-400" />Duplex sequence</div><p className="break-words rounded-lg border border-zinc-800 bg-[#07090e] p-4 font-mono text-xs leading-relaxed text-indigo-300">{imposition.printSequenceText}</p></div>}
         </div> : <div className="rounded-xl border border-dashed border-zinc-800 bg-[#0f1422] p-12 text-center text-zinc-400"><AlertCircle className="mx-auto mb-2 h-7 w-7 text-zinc-500" />Enter a valid page range such as 1-16.</div>}
       </div>
@@ -216,12 +235,12 @@ export default function PdfPageEditor() {
   );
 }
 
-function SheetCard({ sheet, totalSheets }: { sheet: ImposedSheet; totalSheets: number }) {
-  return <section className="rounded-xl border border-zinc-800/90 bg-[#0f1422] p-4 shadow-md sm:p-5"><div className="mb-4 flex items-center justify-between text-xs font-mono"><span className="font-semibold text-zinc-200">Sheet {sheet.sheetNumber} <span className="font-normal text-zinc-500">of {totalSheets}</span></span>{sheet.sheetNumber === 1 ? <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] uppercase text-indigo-300">Outer cover</span> : null}</div><div className="grid gap-4 md:grid-cols-2"><Spread label="Side A (front)" side={sheet.front} /><Spread label="Side B (back)" side={sheet.back} /></div></section>;
+function SheetCard({ sheet, totalSheets, arabic }: { sheet: ImposedSheet; totalSheets: number; arabic: boolean }) {
+  return <section className="rounded-xl border border-zinc-800/90 bg-[#0f1422] p-4 shadow-md sm:p-5"><div className="mb-4 flex items-center justify-between text-xs font-mono"><span className="font-semibold text-zinc-200">Sheet {sheet.sheetNumber} <span className="font-normal text-zinc-500">of {totalSheets}</span></span>{sheet.sheetNumber === 1 ? <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] uppercase text-indigo-300">{arabic ? "Arabic cover · page 1 left" : "Outer cover"}</span> : null}</div><div className="grid gap-4 md:grid-cols-2"><Spread label="Side A (front)" side={sheet.front} arabic={arabic} /><Spread label="Side B (back)" side={sheet.back} arabic={arabic} /></div></section>;
 }
 
-function Spread({ label, side }: { label: string; side: SheetSide }) {
-  return <div className="rounded-lg border border-zinc-800/80 bg-[#07090e] p-3"><div className="mb-2 text-[11px] font-mono text-zinc-400">{label}</div><div className="grid grid-cols-2 divide-x divide-dashed divide-zinc-700 rounded-md border border-zinc-800 bg-zinc-900/60"><PageBadge node={side.left} /><PageBadge node={side.right} /></div></div>;
+function Spread({ label, side, arabic }: { label: string; side: SheetSide; arabic: boolean }) {
+  return <div className="rounded-lg border border-zinc-800/80 bg-[#07090e] p-3"><div className="mb-2 flex items-center justify-between text-[11px] font-mono text-zinc-400"><span>{label}</span>{arabic ? <span className="text-[10px] text-zinc-500">Left: start · Right: end</span> : null}</div><div className="grid grid-cols-2 divide-x divide-dashed divide-zinc-700 rounded-md border border-zinc-800 bg-zinc-900/60"><PageBadge node={side.left} /><PageBadge node={side.right} /></div></div>;
 }
 
 function PageBadge({ node }: { node: PageNode }) {
@@ -232,8 +251,10 @@ function ViewButton({ active, onClick, icon, children }: { active: boolean; onCl
   return <button type="button" onClick={onClick} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"}`}>{icon}{children}</button>;
 }
 
-function ImpositionTable({ sheets }: { sheets: ImposedSheet[] }) {
-  return <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-[#0f1422]"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-zinc-800 bg-zinc-900/60 text-[10px] font-mono uppercase text-zinc-400"><th className="px-4 py-3">Sheet</th><th className="border-l border-zinc-800 px-4 py-3" colSpan={2}>Front spread</th><th className="border-l border-zinc-800 px-4 py-3" colSpan={2}>Back spread</th></tr><tr className="border-b border-zinc-800/70 bg-zinc-900/30 text-[10px] font-mono text-zinc-500"><th className="px-4 py-2 font-normal">Index</th><th className="border-l border-zinc-800/70 px-4 py-2 font-normal">Left</th><th className="px-4 py-2 font-normal">Right</th><th className="border-l border-zinc-800/70 px-4 py-2 font-normal">Left</th><th className="px-4 py-2 font-normal">Right</th></tr></thead><tbody className="divide-y divide-zinc-800/60 font-mono text-xs">{sheets.map((sheet) => <tr key={sheet.sheetNumber} className="hover:bg-zinc-800/30"><td className="px-4 py-3 text-zinc-400">Sheet {sheet.sheetNumber}</td><td className="border-l border-zinc-800/60 px-4 py-3"><TableBadge node={sheet.front.left} /></td><td className="px-4 py-3"><TableBadge node={sheet.front.right} /></td><td className="border-l border-zinc-800/60 px-4 py-3"><TableBadge node={sheet.back.left} /></td><td className="px-4 py-3"><TableBadge node={sheet.back.right} /></td></tr>)}</tbody></table></div>;
+function ImpositionTable({ sheets, arabic }: { sheets: ImposedSheet[]; arabic: boolean }) {
+  const leftLabel = arabic ? "Left (start)" : "Left";
+  const rightLabel = arabic ? "Right (end)" : "Right";
+  return <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-[#0f1422]"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-zinc-800 bg-zinc-900/60 text-[10px] font-mono uppercase text-zinc-400"><th className="px-4 py-3">Sheet</th><th className="border-l border-zinc-800 px-4 py-3" colSpan={2}>Front spread</th><th className="border-l border-zinc-800 px-4 py-3" colSpan={2}>Back spread</th></tr><tr className="border-b border-zinc-800/70 bg-zinc-900/30 text-[10px] font-mono text-zinc-500"><th className="px-4 py-2 font-normal">Index</th><th className="border-l border-zinc-800/70 px-4 py-2 font-normal">{leftLabel}</th><th className="px-4 py-2 font-normal">{rightLabel}</th><th className="border-l border-zinc-800/70 px-4 py-2 font-normal">{leftLabel}</th><th className="px-4 py-2 font-normal">{rightLabel}</th></tr></thead><tbody className="divide-y divide-zinc-800/60 font-mono text-xs">{sheets.map((sheet) => <tr key={sheet.sheetNumber} className="hover:bg-zinc-800/30"><td className="px-4 py-3 text-zinc-400">Sheet {sheet.sheetNumber}</td><td className="border-l border-zinc-800/60 px-4 py-3"><TableBadge node={sheet.front.left} /></td><td className="px-4 py-3"><TableBadge node={sheet.front.right} /></td><td className="border-l border-zinc-800/60 px-4 py-3"><TableBadge node={sheet.back.left} /></td><td className="px-4 py-3"><TableBadge node={sheet.back.right} /></td></tr>)}</tbody></table></div>;
 }
 
 function TableBadge({ node }: { node: PageNode }) {
