@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Archive, FileOutput, Hash, Scissors } from "lucide-react";
+import { Archive, Combine, FileOutput, Hash, Scissors } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export default function BookletStudioPage() {
@@ -20,6 +20,7 @@ export default function BookletStudioPage() {
           <ToolLink href="/pdf-page-remover" icon={<Scissors />} title="PDF page remover" description="Preview, reorder, rotate, and remove pages from a PDF." />
           <ToolLink href="/pdf-page-numberer" icon={<Hash />} title="Add page numbers" description="Add and style page numbers on every PDF page." />
           <ToolLink href="/pdf-splitter" icon={<Archive />} title="Split PDF" description="Split a PDF into page ranges and download one ZIP archive." />
+          <ToolLink href="/pdf-merger" icon={<Combine />} title="Merge PDFs" description="Combine several PDFs into one file, in the order you choose." />
         </div>
       </div>
     </main>
